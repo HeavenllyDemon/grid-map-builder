@@ -1,0 +1,380 @@
+@import "tailwindcss";
+
+@theme {
+  --color-app-bg: #161618;
+  --color-app-panel: #1d1d20;
+  --color-app-card: #25252a;
+  --color-app-border: #34343a;
+  --color-accent: #f97316;
+  --color-accent-soft: rgba(249, 115, 22, 0.18);
+}
+
+/* Shared dimensions for the floating UI shell */
+:root {
+  --float-h: 2.25rem; /* 36px — every top-level floating control is this tall */
+  --float-h-inner: 1.75rem; /* 28px — buttons nested inside a float-pill */
+  --float-radius: 0.625rem; /* 10px */
+  --float-inner-radius: 0.375rem; /* 6px */
+  --float-bg: rgba(28, 28, 32, 0.78);
+  --float-border: rgba(255, 255, 255, 0.1);
+  --float-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.55);
+  --float-shadow-strong: 0 14px 32px -10px rgba(0, 0, 0, 0.6);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  font-family:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  color: #f4f4f5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background:
+    radial-gradient(
+      1200px 600px at 80% -10%,
+      rgba(249, 115, 22, 0.08),
+      transparent 60%
+    ),
+    radial-gradient(
+      900px 500px at -10% 110%,
+      rgba(249, 115, 22, 0.05),
+      transparent 60%
+    ),
+    #161618;
+  background-attachment: fixed;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* ─────── Shared floating shell ───────────────────────────────────────── */
+
+/* Single-row horizontal bar (project bar, toolbar, zoom hud, etc.) */
+.float-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: var(--float-h);
+  padding: 0 0.25rem;
+  border-radius: var(--float-radius);
+  border: 1px solid var(--float-border);
+  background: var(--float-bg);
+  box-shadow: var(--float-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #e4e4e7;
+  white-space: nowrap;
+}
+
+/* Multi-row container (sprite palette, controls help expanded) */
+.float-panel {
+  border-radius: var(--float-radius);
+  border: 1px solid var(--float-border);
+  background: var(--float-bg);
+  box-shadow: var(--float-shadow-strong);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #e4e4e7;
+  overflow: hidden;
+}
+
+/* Header row inside a float-panel — same height as float-pill */
+.float-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--float-h);
+  padding: 0 0.625rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Inner pill button (used inside .float-pill) */
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: var(--float-h-inner);
+  padding: 0 0.5rem;
+  border-radius: var(--float-inner-radius);
+  font-size: 0.75rem;
+  line-height: 1;
+  font-weight: 500;
+  color: #d4d4d8;
+  background: transparent;
+  border: none;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
+  white-space: nowrap;
+}
+.pill-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: #f4f4f5;
+}
+.pill-btn.is-active {
+  background: rgba(249, 115, 22, 0.18);
+  color: #ffedd5;
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.5);
+}
+.pill-btn.is-active:hover {
+  background: rgba(249, 115, 22, 0.24);
+}
+
+/* Square floating icon button — same 36px standard */
+.float-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--float-h);
+  width: var(--float-h);
+  border-radius: var(--float-radius);
+  border: 1px solid var(--float-border);
+  background: var(--float-bg);
+  box-shadow: var(--float-shadow);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  color: #d4d4d8;
+  transition:
+    background-color 100ms ease,
+    border-color 100ms ease,
+    color 100ms ease;
+}
+.float-icon-btn:hover {
+  background: rgba(40, 40, 45, 0.85);
+  border-color: rgba(249, 115, 22, 0.4);
+  color: #fed7aa;
+}
+
+/* Tiny keyboard hint badge */
+.kbd-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  height: 0.95rem;
+  padding: 0 0.2rem;
+  margin-left: 0.125rem;
+  border-radius: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.625rem;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.06);
+  color: #a1a1aa;
+}
+.pill-btn.is-active .kbd-hint {
+  background: rgba(249, 115, 22, 0.28);
+  color: #ffedd5;
+}
+
+/* Premium primary button — same 36px height as floating shells */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--float-h);
+  padding: 0 0.85rem;
+  border-radius: var(--float-radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #fff;
+  background: linear-gradient(180deg, #fb923c 0%, #ea580c 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.2) inset,
+    0 0 0 1px rgba(251, 146, 60, 0.45) inset,
+    0 6px 20px -4px rgba(249, 115, 22, 0.45),
+    0 2px 6px -2px rgba(249, 115, 22, 0.35);
+  transition:
+    transform 80ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+  border: none;
+  white-space: nowrap;
+}
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fdba74 0%, #f97316 100%);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.25) inset,
+    0 0 0 1px rgba(251, 146, 60, 0.6) inset,
+    0 8px 24px -4px rgba(249, 115, 22, 0.55),
+    0 3px 10px -2px rgba(249, 115, 22, 0.4);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow:
+    0 0 0 1px rgba(251, 146, 60, 0.5) inset,
+    0 2px 8px -2px rgba(249, 115, 22, 0.4);
+}
+.btn-primary:disabled {
+  background: linear-gradient(180deg, #3f3f46 0%, #27272a 100%);
+  color: #a1a1aa;
+  box-shadow: 0 0 0 1px rgba(63, 63, 70, 0.6) inset;
+  opacity: 0.7;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--float-h);
+  padding: 0 0.85rem;
+  border-radius: var(--float-radius);
+  font-size: 0.875rem;
+  color: #e4e4e7;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+  white-space: nowrap;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+}
+
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: var(--float-h);
+  padding: 0 0.85rem;
+  border-radius: var(--float-radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+  background: linear-gradient(180deg, #f87171 0%, #dc2626 100%);
+  box-shadow:
+    0 0 0 1px rgba(248, 113, 113, 0.45) inset,
+    0 6px 20px -4px rgba(220, 38, 38, 0.45);
+  border: none;
+  transition: background 150ms ease;
+}
+.btn-danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, #fca5a5 0%, #ef4444 100%);
+}
+
+.input-field {
+  width: 100%;
+  border-radius: var(--float-inner-radius);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 0.45rem 0.7rem;
+  font-size: 0.875rem;
+  color: #f4f4f5;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+  outline: none;
+}
+.input-field::placeholder {
+  color: #71717a;
+}
+.input-field:focus {
+  border-color: rgba(249, 115, 22, 0.7);
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+}
+.input-field.error,
+.input-field[aria-invalid="true"] {
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+/* Scrollbar polish */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* Zoom slider styling (native range) */
+.zoom-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 16px;
+  cursor: pointer;
+}
+.zoom-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+.zoom-slider::-moz-range-track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+.zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  margin-top: -4.5px;
+  background: linear-gradient(180deg, #fdba74 0%, #f97316 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 6px -1px rgba(249, 115, 22, 0.5);
+  transition: transform 100ms ease;
+}
+.zoom-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, #fdba74 0%, #f97316 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 6px -1px rgba(249, 115, 22, 0.5);
+  transition: transform 100ms ease;
+}
+.zoom-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.zoom-slider:hover::-moz-range-thumb {
+  transform: scale(1.15);
+}
+.zoom-slider:focus {
+  outline: none;
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(249, 115, 22, 0);
+  }
+}
