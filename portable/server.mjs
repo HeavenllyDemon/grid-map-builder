@@ -157,6 +157,18 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/shutdown') {
+    sendJson(res, 200, {
+      ok: true,
+      message: 'Grid Map Builder server is shutting down.',
+    });
+    setTimeout(() => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 750);
+    }, 150);
+    return;
+  }
+
   sendJson(res, 404, {
     ok: false,
     error: 'Unknown API route.',

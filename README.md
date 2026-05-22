@@ -26,6 +26,7 @@ The portable package checks GitHub Releases from the app UI.
 - When a newer release is available, click the update button.
 - After the download finishes, click restart.
 - The local server restarts, replaces the package files, and reloads the app.
+- Use the Stop button in the header when you want to shut down the local server from the UI.
 - Your project data is not inside the package folder. It remains in browser IndexedDB for `127.0.0.1:58137`.
 
 You can also manually update by unzipping a newer portable package over the previous package folder. Use the same start script and the same fixed local address.

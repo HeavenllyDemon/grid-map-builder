@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Download, RefreshCw, RotateCw } from 'lucide-react';
+import { Download, Power, RefreshCw, RotateCw } from 'lucide-react';
 
 type UpdateStatus =
   | 'hidden'
@@ -47,6 +47,8 @@ export function UpdatePanel() {
   const [currentVersion, setCurrentVersion] = useState<string | null>(null);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shuttingDown, setShuttingDown] = useState(false);
+  const [shutDown, setShutDown] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -103,6 +105,20 @@ export function UpdatePanel() {
     }
   }
 
+  async function shutDownServer() {
+    if (!window.confirm('Shut down Grid Map Builder?')) return;
+    setError(null);
+    setShuttingDown(true);
+    try {
+      await fetchJson('/api/shutdown', { method: 'POST' });
+      setShutDown(true);
+    } catch (err) {
+      setError((err as Error).message);
+      setStatus('error');
+      setShuttingDown(false);
+    }
+  }
+
   function pollUntilBackOnline() {
     const startedAt = Date.now();
     const timer = window.setInterval(async () => {
@@ -151,11 +167,17 @@ export function UpdatePanel() {
     );
 
   return (
-    <div className="relative flex items-center">
+    <div className="relative flex items-center gap-2">
       <button
         type="button"
         className={status === 'available' || status === 'ready' ? 'btn-primary' : 'btn-secondary'}
-        disabled={status === 'checking' || status === 'downloading' || status === 'restarting'}
+        disabled={
+          shutDown ||
+          shuttingDown ||
+          status === 'checking' ||
+          status === 'downloading' ||
+          status === 'restarting'
+        }
         onClick={
           status === 'available'
             ? downloadUpdate
@@ -168,9 +190,24 @@ export function UpdatePanel() {
         {icon}
         {label}
       </button>
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={shutDown || shuttingDown || status === 'restarting'}
+        onClick={shutDownServer}
+        title="Shut down local server"
+      >
+        <Power size={15} />
+        {shutDown ? 'Stopped' : shuttingDown ? 'Stopping' : 'Stop'}
+      </button>
       {status === 'error' && error && (
         <div className="absolute right-0 top-11 z-20 w-72 rounded-lg border border-red-500/30 bg-zinc-950 px-3 py-2 text-xs text-red-200 shadow-xl">
           {error}
+        </div>
+      )}
+      {shutDown && (
+        <div className="absolute right-0 top-11 z-20 w-72 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-200 shadow-xl">
+          Server stopped. You can close this tab.
         </div>
       )}
     </div>

@@ -103,6 +103,7 @@ await fs.writeFile(
     '',
     'Updates:',
     '- Use the update button in the app when a newer GitHub release is available.',
+    '- Use the Stop button in the header to shut down the local server from the app.',
     '- You can also unzip a newer portable package over this folder.',
     '- Project data is stored in your browser IndexedDB for 127.0.0.1:58137, not in this package folder.',
     '',
