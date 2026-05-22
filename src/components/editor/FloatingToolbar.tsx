@@ -153,7 +153,7 @@ export function FloatingToolbar() {
 
           <div className="mx-1 h-5 w-px bg-white/10" />
 
-          <div className="flex h-full items-center gap-2 px-2">
+          <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-2">
             <span className="text-xs font-medium text-zinc-300">Size</span>
             <input
               type="range"
@@ -162,7 +162,7 @@ export function FloatingToolbar() {
               step={BRUSH_SIZE_LIMITS.step}
               value={brushSize}
               onChange={(e) => setBrushSize(Number(e.target.value))}
-              className="zoom-slider w-28"
+              className="zoom-slider min-w-28 flex-1"
               aria-label="Brush size"
             />
             <span className="kbd-hint min-w-[1.25rem]">{brushSize}</span>
