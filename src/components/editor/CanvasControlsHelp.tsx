@@ -17,6 +17,7 @@ interface Row {
 const ROWS: Row[] = [
   { label: 'Brush', keys: ['B'] },
   { label: 'Eraser', keys: ['E'] },
+  { label: 'Line', keys: ['L'] },
   { label: 'Select', keys: ['S'] },
   { label: 'Fill', keys: ['F'] },
   { label: 'Pick', keys: ['I'] },

@@ -16,6 +16,14 @@ import {
 } from '../lib/loadImage';
 import { stripExtension } from '../lib/files';
 import { renderThumbnailDataUrl } from '../lib/thumbnail';
+import {
+  brushCells,
+  clampBrushSize,
+  DEFAULT_BRUSH_SHAPE,
+  DEFAULT_BRUSH_SIZE,
+  linePoints,
+  type BrushShape,
+} from '../lib/brush';
 import type { Project, ProjectId, SpriteId, SpriteMeta } from '../types';
 import {
   type Camera,
@@ -26,7 +34,13 @@ import {
 } from '../canvas/camera';
 
 export type SaveState = 'idle' | 'pending' | 'saving' | 'error';
-export type Tool = 'brush' | 'eraser' | 'select' | 'fill' | 'eyedropper';
+export type Tool =
+  | 'brush'
+  | 'eraser'
+  | 'line'
+  | 'select'
+  | 'fill'
+  | 'eyedropper';
 
 export interface AddSpritesResult {
   added: number;
@@ -53,6 +67,16 @@ export interface MarqueeState {
   startRow: number;
   endCol: number;
   endRow: number;
+}
+
+export interface LineState {
+  startCol: number;
+  startRow: number;
+  endCol: number;
+  endRow: number;
+  spriteId: SpriteId | null;
+  brushShape: BrushShape;
+  brushSize: number;
 }
 
 export interface TileChange {
@@ -82,10 +106,13 @@ interface EditorState {
 
   activeSpriteId: SpriteId | null;
   activeTool: Tool;
+  brushSize: number;
+  brushShape: BrushShape;
   hoverTile: TileCoord | null;
   drag: DragState | null;
   hitTest: HitTestFn | null;
   marquee: MarqueeState | null;
+  linePreview: LineState | null;
   selection: MarqueeState | null;
   cropQueue: File[];
 
@@ -133,9 +160,27 @@ interface EditorState {
 
   setActiveSprite: (id: SpriteId | null) => void;
   setActiveTool: (tool: Tool) => void;
+  setBrushSize: (size: number) => void;
+  setBrushShape: (shape: BrushShape) => void;
   setHoverTile: (tile: TileCoord | null) => void;
 
   placeTile: (col: number, row: number, spriteId: SpriteId | null) => void;
+  paintBrush: (
+    col: number,
+    row: number,
+    spriteId: SpriteId | null,
+    shape?: BrushShape,
+    size?: number,
+  ) => void;
+  paintLine: (
+    startCol: number,
+    startRow: number,
+    endCol: number,
+    endRow: number,
+    spriteId: SpriteId | null,
+    shape?: BrushShape,
+    size?: number,
+  ) => void;
   paintRect: (
     c1: number,
     r1: number,
@@ -145,6 +190,7 @@ interface EditorState {
   ) => void;
 
   setMarquee: (m: MarqueeState | null) => void;
+  setLinePreview: (line: LineState | null) => void;
   setSelection: (s: MarqueeState | null) => void;
   fillSelection: (spriteId: SpriteId | null) => void;
   floodFill: (col: number, row: number, spriteId: SpriteId | null) => void;
@@ -211,10 +257,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     activeSpriteId: null,
     activeTool: 'brush',
+    brushSize: DEFAULT_BRUSH_SIZE,
+    brushShape: DEFAULT_BRUSH_SHAPE,
     hoverTile: null,
     drag: null,
     hitTest: null,
     marquee: null,
+    linePreview: null,
     selection: null,
     cropQueue: [],
 
@@ -236,9 +285,12 @@ export const useEditorStore = create<EditorState>((set, get) => {
         spriteImages: new Map(),
         activeSpriteId: null,
         activeTool: 'brush',
+        brushSize: DEFAULT_BRUSH_SIZE,
+        brushShape: DEFAULT_BRUSH_SHAPE,
         hoverTile: null,
         drag: null,
         marquee: null,
+        linePreview: null,
         selection: null,
         cropQueue: [],
         undoStack: [],
@@ -292,9 +344,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
         spriteImages: new Map(),
         activeSpriteId: null,
         activeTool: 'brush',
+        brushSize: DEFAULT_BRUSH_SIZE,
+        brushShape: DEFAULT_BRUSH_SHAPE,
         hoverTile: null,
         drag: null,
         marquee: null,
+        linePreview: null,
+        selection: null,
         hitTest: null,
         cropQueue: [],
         undoStack: [],
@@ -528,10 +584,26 @@ export const useEditorStore = create<EditorState>((set, get) => {
       // brush, select, fill, eyedropper so clicking a sprite during e.g.
       // a fill-selection workflow doesn't switch tools.
       const nextTool = id && current === 'eraser' ? 'brush' : current;
-      set({ activeSpriteId: id, activeTool: nextTool });
+      set({
+        activeSpriteId: id,
+        activeTool: nextTool,
+        marquee: null,
+        linePreview: null,
+        selection: nextTool === 'select' ? get().selection : null,
+      });
     },
 
-    setActiveTool: (tool) => set({ activeTool: tool }),
+    setActiveTool: (tool) =>
+      set({
+        activeTool: tool,
+        marquee: null,
+        linePreview: null,
+        selection: tool === 'select' ? get().selection : null,
+      }),
+
+    setBrushSize: (size) => set({ brushSize: clampBrushSize(size) }),
+
+    setBrushShape: (shape) => set({ brushShape: shape }),
 
     setHoverTile: (tile) => {
       const prev = get().hoverTile;
@@ -578,6 +650,86 @@ export const useEditorStore = create<EditorState>((set, get) => {
       scheduleSave();
     },
 
+    paintBrush: (col, row, spriteId, shape, size) => {
+      const project = get().project;
+      if (!project) return;
+      const { gridCols, gridRows } = project.settings;
+      const brushShape = shape ?? get().brushShape;
+      const brushSize = size ?? get().brushSize;
+      const cells = brushCells(brushShape, brushSize, {
+        randomize: brushShape === 'scatter',
+      });
+      const newTiles = project.tiles.slice();
+      const changes: TileChange[] = [];
+
+      for (const cell of cells) {
+        const c = col + cell.dc;
+        const r = row + cell.dr;
+        if (c < 0 || c >= gridCols || r < 0 || r >= gridRows) continue;
+        const idx = r * gridCols + c;
+        const prev = newTiles[idx];
+        if (prev === spriteId) continue;
+        changes.push({ index: idx, prev, next: spriteId });
+        newTiles[idx] = spriteId;
+      }
+
+      if (changes.length === 0) return;
+      const stroke = get().currentStroke;
+      if (stroke) {
+        set({
+          project: { ...project, tiles: newTiles },
+          currentStroke: {
+            ...stroke,
+            changes: [...stroke.changes, ...changes],
+          },
+          redoStack: [],
+        });
+      } else {
+        const op: TilesOp = { kind: 'tiles', changes };
+        set({
+          project: { ...project, tiles: newTiles },
+          undoStack: [...get().undoStack, op].slice(-UNDO_STACK_LIMIT),
+          redoStack: [],
+        });
+      }
+      scheduleSave();
+    },
+
+    paintLine: (startCol, startRow, endCol, endRow, spriteId, shape, size) => {
+      const project = get().project;
+      if (!project) return;
+      const { gridCols, gridRows } = project.settings;
+      const brushShape = shape ?? get().brushShape;
+      const brushSize = size ?? get().brushSize;
+      const footprint = brushCells(brushShape, brushSize, {
+        randomize: brushShape === 'scatter',
+      });
+      const newTiles = project.tiles.slice();
+      const changes: TileChange[] = [];
+
+      for (const point of linePoints(startCol, startRow, endCol, endRow)) {
+        for (const cell of footprint) {
+          const c = point.col + cell.dc;
+          const r = point.row + cell.dr;
+          if (c < 0 || c >= gridCols || r < 0 || r >= gridRows) continue;
+          const idx = r * gridCols + c;
+          const prev = newTiles[idx];
+          if (prev === spriteId) continue;
+          changes.push({ index: idx, prev, next: spriteId });
+          newTiles[idx] = spriteId;
+        }
+      }
+
+      if (changes.length === 0) return;
+      const op: TilesOp = { kind: 'tiles', changes };
+      set({
+        project: { ...project, tiles: newTiles },
+        undoStack: [...get().undoStack, op].slice(-UNDO_STACK_LIMIT),
+        redoStack: [],
+      });
+      scheduleSave();
+    },
+
     paintRect: (c1, r1, c2, r2, spriteId) => {
       const project = get().project;
       if (!project) return;
@@ -612,6 +764,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
     },
 
     setMarquee: (m) => set({ marquee: m }),
+
+    setLinePreview: (line) => set({ linePreview: line }),
 
     setSelection: (s) => set({ selection: s }),
 
@@ -749,6 +903,9 @@ export const useEditorStore = create<EditorState>((set, get) => {
         },
         activeSpriteId: spriteId,
         activeTool: nextTool,
+        marquee: null,
+        linePreview: null,
+        selection: nextTool === 'select' ? get().selection : null,
       });
     },
 

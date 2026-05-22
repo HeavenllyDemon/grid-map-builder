@@ -93,6 +93,9 @@ export function EditorScreen() {
       } else if (k === 'e') {
         e.preventDefault();
         useEditorStore.getState().setActiveTool('eraser');
+      } else if (k === 'l') {
+        e.preventDefault();
+        useEditorStore.getState().setActiveTool('line');
       } else if (k === 's') {
         e.preventDefault();
         useEditorStore.getState().setActiveTool('select');

@@ -40,16 +40,21 @@ export function MapCanvas() {
   const spriteImages = useEditorStore((s) => s.spriteImages);
   const activeSpriteId = useEditorStore((s) => s.activeSpriteId);
   const activeTool = useEditorStore((s) => s.activeTool);
+  const brushSize = useEditorStore((s) => s.brushSize);
+  const brushShape = useEditorStore((s) => s.brushShape);
   const setActiveSprite = useEditorStore((s) => s.setActiveSprite);
   const hoverTile = useEditorStore((s) => s.hoverTile);
   const setHoverTile = useEditorStore((s) => s.setHoverTile);
-  const placeTile = useEditorStore((s) => s.placeTile);
+  const paintBrush = useEditorStore((s) => s.paintBrush);
+  const paintLine = useEditorStore((s) => s.paintLine);
   const paintRect = useEditorStore((s) => s.paintRect);
   const floodFill = useEditorStore((s) => s.floodFill);
   const beginStroke = useEditorStore((s) => s.beginStroke);
   const endStroke = useEditorStore((s) => s.endStroke);
   const marquee = useEditorStore((s) => s.marquee);
   const setMarquee = useEditorStore((s) => s.setMarquee);
+  const linePreview = useEditorStore((s) => s.linePreview);
+  const setLinePreview = useEditorStore((s) => s.setLinePreview);
   const selection = useEditorStore((s) => s.selection);
   const setSelection = useEditorStore((s) => s.setSelection);
   const panBy = useEditorStore((s) => s.panBy);
@@ -69,12 +74,24 @@ export function MapCanvas() {
     pointerId: number;
     mode: 'paint' | 'erase';
     spriteId: string | null;
+    brushSize: number;
+    brushShape: typeof brushShape;
     lastIndex: number;
   } | null>(null);
   const marqueeRef = useRef<{
     pointerId: number;
     startCol: number;
     startRow: number;
+  } | null>(null);
+  const lineRef = useRef<{
+    pointerId: number;
+    startCol: number;
+    startRow: number;
+    endCol: number;
+    endRow: number;
+    spriteId: string;
+    brushSize: number;
+    brushShape: typeof brushShape;
   } | null>(null);
   const selectionRef = useRef<{
     pointerId: number;
@@ -148,7 +165,10 @@ export function MapCanvas() {
       hoverTile,
       activeTool,
       activeSpriteId,
+      brushSize,
+      brushShape,
       marquee,
+      linePreview,
       selection,
     });
   }, [
@@ -160,7 +180,10 @@ export function MapCanvas() {
     hoverTile,
     activeTool,
     activeSpriteId,
+    brushSize,
+    brushShape,
     marquee,
+    linePreview,
     selection,
   ]);
 
@@ -324,6 +347,32 @@ export function MapCanvas() {
       return;
     }
 
+    if (activeTool === 'line') {
+      if (!activeSpriteId) return;
+      e.preventDefault();
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      lineRef.current = {
+        pointerId: e.pointerId,
+        startCol: tile.col,
+        startRow: tile.row,
+        endCol: tile.col,
+        endRow: tile.row,
+        spriteId: activeSpriteId,
+        brushSize,
+        brushShape,
+      };
+      setLinePreview({
+        startCol: tile.col,
+        startRow: tile.row,
+        endCol: tile.col,
+        endRow: tile.row,
+        spriteId: activeSpriteId,
+        brushSize,
+        brushShape,
+      });
+      return;
+    }
+
     if (activeTool === 'fill') {
       e.preventDefault();
       const target =
@@ -349,10 +398,18 @@ export function MapCanvas() {
       pointerId: e.pointerId,
       mode,
       spriteId: mode === 'paint' ? activeSpriteId : null,
+      brushSize,
+      brushShape,
       lastIndex: index,
     };
     beginStroke();
-    placeTile(tile.col, tile.row, mode === 'paint' ? activeSpriteId : null);
+    paintBrush(
+      tile.col,
+      tile.row,
+      mode === 'paint' ? activeSpriteId : null,
+      brushShape,
+      brushSize,
+    );
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -400,12 +457,37 @@ export function MapCanvas() {
       return;
     }
 
+    const line = lineRef.current;
+    if (line && line.pointerId === e.pointerId && project) {
+      const clamped = tile ?? clampedTileFromEvent(e);
+      if (clamped) {
+        line.endCol = clamped.col;
+        line.endRow = clamped.row;
+        setLinePreview({
+          startCol: line.startCol,
+          startRow: line.startRow,
+          endCol: clamped.col,
+          endRow: clamped.row,
+          spriteId: line.spriteId,
+          brushSize: line.brushSize,
+          brushShape: line.brushShape,
+        });
+      }
+      return;
+    }
+
     const paint = paintRef.current;
     if (paint && paint.pointerId === e.pointerId && tile && project) {
       const idx = tile.row * project.settings.gridCols + tile.col;
       if (idx !== paint.lastIndex) {
         paint.lastIndex = idx;
-        placeTile(tile.col, tile.row, paint.spriteId);
+        paintBrush(
+          tile.col,
+          tile.row,
+          paint.spriteId,
+          paint.brushShape,
+          paint.brushSize,
+        );
       }
     }
   }
@@ -441,6 +523,25 @@ export function MapCanvas() {
       selectionRef.current = null;
       // Click without drag → clear selection
       if (!sel.moved) setSelection(null);
+    }
+    const line = lineRef.current;
+    if (line && line.pointerId === e.pointerId) {
+      try {
+        (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      lineRef.current = null;
+      setLinePreview(null);
+      paintLine(
+        line.startCol,
+        line.startRow,
+        line.endCol,
+        line.endRow,
+        line.spriteId,
+        line.brushShape,
+        line.brushSize,
+      );
     }
     const m = marqueeRef.current;
     if (m && m.pointerId === e.pointerId) {
@@ -485,7 +586,9 @@ export function MapCanvas() {
         ? 'cursor-pointer'
         : activeTool === 'eyedropper'
           ? 'cursor-pointer'
-          : activeTool === 'eraser' || (activeTool === 'brush' && activeSpriteId)
+          : activeTool === 'eraser' ||
+              ((activeTool === 'brush' || activeTool === 'line') &&
+                activeSpriteId)
             ? 'cursor-crosshair'
             : 'cursor-default';
 

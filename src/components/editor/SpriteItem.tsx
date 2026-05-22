@@ -7,6 +7,7 @@ interface Props {
   sprite: SpriteMeta;
   image: HTMLImageElement | undefined;
   active: boolean;
+  compact?: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }
@@ -15,6 +16,7 @@ export function SpriteItem({
   sprite,
   image,
   active,
+  compact = false,
   onSelect,
   onDelete,
 }: Props) {
@@ -49,10 +51,55 @@ export function SpriteItem({
     setEditing(false);
   }
 
+  const title = `${sprite.name} (${sprite.width}×${sprite.height})`;
+
+  if (compact) {
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        title={title}
+        aria-label={title}
+        onClick={() => {
+          if (!editing) onSelect();
+        }}
+        onPointerDown={onPointerDown}
+        onKeyDown={(e) => {
+          if (editing) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
+        className={`group relative mx-auto flex h-12 w-12 cursor-pointer items-center justify-center rounded-lg border p-1 transition ${
+          active
+            ? 'border-orange-500/70 bg-orange-500/10 shadow-md shadow-orange-500/15'
+            : 'border-zinc-800/70 bg-zinc-900/40 hover:border-zinc-700 hover:bg-zinc-800/40'
+        }`}
+      >
+        {active && (
+          <span className="absolute -left-1 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-orange-400" />
+        )}
+        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md border border-zinc-800 bg-zinc-950">
+          {image ? (
+            <img
+              src={image.src}
+              alt={sprite.name}
+              className="h-full w-full object-contain"
+              style={{ imageRendering: 'pixelated' }}
+              draggable={false}
+            />
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="button"
       tabIndex={0}
+      title={title}
       onClick={() => {
         if (!editing) onSelect();
       }}

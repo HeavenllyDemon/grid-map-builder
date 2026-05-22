@@ -1,5 +1,6 @@
 import type { Camera } from './camera';
 import type { Project, SpriteId } from '../types';
+import { brushCells, linePoints, type BrushShape } from '../lib/brush';
 
 const COLOR_BG = 'transparent';
 const COLOR_MAP_BG = '#1f1f23';
@@ -18,16 +19,29 @@ export interface VisibleRange {
   rowEnd: number;
 }
 
+interface LineOverlay {
+  startCol: number;
+  startRow: number;
+  endCol: number;
+  endRow: number;
+  spriteId: SpriteId | null;
+  brushShape: BrushShape;
+  brushSize: number;
+}
+
 export interface OverlayInfo {
   hoverTile: { col: number; row: number } | null;
-  activeTool: 'brush' | 'eraser' | 'select' | 'fill' | 'eyedropper';
+  activeTool: 'brush' | 'eraser' | 'line' | 'select' | 'fill' | 'eyedropper';
   activeSpriteId: SpriteId | null;
+  brushSize: number;
+  brushShape: BrushShape;
   marquee: {
     startCol: number;
     startRow: number;
     endCol: number;
     endRow: number;
   } | null;
+  linePreview: LineOverlay | null;
   selection: {
     startCol: number;
     startRow: number;
@@ -81,7 +95,7 @@ export function renderGrid(
   spriteImages: Map<SpriteId, HTMLImageElement>,
   overlay?: OverlayInfo,
 ): void {
-  const { gridCols, tileWidth, tileHeight } = project.settings;
+  const { gridCols, gridRows, tileWidth, tileHeight } = project.settings;
   const mapW = project.settings.gridCols * tileWidth;
   const mapH = project.settings.gridRows * tileHeight;
 
@@ -109,6 +123,50 @@ export function renderGrid(
   const range = computeVisibleRange(project, camera, canvasW, canvasH);
   const tw = tileWidth * camera.zoom;
   const th = tileHeight * camera.zoom;
+
+  function drawBrushPreview(
+    points: { col: number; row: number }[],
+    spriteId: SpriteId | null,
+    shape: BrushShape,
+    size: number,
+    erase: boolean,
+  ) {
+    const cells = brushCells(shape, size);
+    const img = spriteId ? spriteImages.get(spriteId) : undefined;
+    const seen = new Set<number>();
+    ctx.save();
+    for (const point of points) {
+      for (const cell of cells) {
+        const c = point.col + cell.dc;
+        const r = point.row + cell.dr;
+        if (c < 0 || c >= gridCols || r < 0 || r >= gridRows) continue;
+        const idx = r * gridCols + c;
+        if (seen.has(idx)) continue;
+        seen.add(idx);
+        const p = tileScreenPos(
+          c,
+          r,
+          tileWidth,
+          tileHeight,
+          camera,
+          canvasW,
+          canvasH,
+        );
+        if (!erase && img && img.complete) {
+          ctx.globalAlpha = 0.35 + 0.25 * cell.strength;
+          ctx.drawImage(img, p.x, p.y, tw, th);
+          ctx.globalAlpha = 1;
+        } else if (erase) {
+          ctx.fillStyle = `rgba(239, 68, 68, ${0.14 + 0.18 * cell.strength})`;
+          ctx.fillRect(p.x, p.y, tw, th);
+        }
+        ctx.strokeStyle = `rgba(251, 146, 60, ${0.35 + 0.35 * cell.strength})`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(p.x + 0.5, p.y + 0.5, tw - 1, th - 1);
+      }
+    }
+    ctx.restore();
+  }
 
   for (let r = range.rowStart; r <= range.rowEnd; r++) {
     for (let c = range.colStart; c <= range.colEnd; c++) {
@@ -160,21 +218,44 @@ export function renderGrid(
 
   if (overlay && overlay.hoverTile && !overlay.marquee) {
     const { col, row } = overlay.hoverTile;
-    const p = tileScreenPos(col, row, tileWidth, tileHeight, camera, canvasW, canvasH);
-    if (overlay.activeTool === 'brush' && overlay.activeSpriteId) {
-      const img = spriteImages.get(overlay.activeSpriteId);
-      if (img && img.complete) {
-        ctx.globalAlpha = 0.55;
-        ctx.drawImage(img, p.x, p.y, tw, th);
-        ctx.globalAlpha = 1;
-      }
-    } else if (overlay.activeTool === 'eraser') {
-      ctx.fillStyle = COLOR_ERASE;
-      ctx.fillRect(p.x, p.y, tw, th);
+    const showBrushFootprint =
+      overlay.activeTool === 'eraser' ||
+      ((overlay.activeTool === 'brush' || overlay.activeTool === 'line') &&
+        overlay.activeSpriteId);
+
+    if (showBrushFootprint) {
+      drawBrushPreview(
+        [{ col, row }],
+        overlay.activeTool === 'eraser' ? null : overlay.activeSpriteId,
+        overlay.brushShape,
+        overlay.brushSize,
+        overlay.activeTool === 'eraser',
+      );
+    } else {
+      const p = tileScreenPos(
+        col,
+        row,
+        tileWidth,
+        tileHeight,
+        camera,
+        canvasW,
+        canvasH,
+      );
+      ctx.strokeStyle = COLOR_HOVER;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, tw - 1, th - 1);
     }
-    ctx.strokeStyle = COLOR_HOVER;
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(p.x + 0.5, p.y + 0.5, tw - 1, th - 1);
+  }
+
+  if (overlay && overlay.linePreview) {
+    const line = overlay.linePreview;
+    drawBrushPreview(
+      linePoints(line.startCol, line.startRow, line.endCol, line.endRow),
+      line.spriteId,
+      line.brushShape,
+      line.brushSize,
+      false,
+    );
   }
 
   if (overlay && overlay.selection) {
