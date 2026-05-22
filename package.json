@@ -16,10 +16,11 @@
     "node": ">=20"
   },
   "scripts": {
+    "start": "node portable/server.mjs",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "start:portable": "node portable/server.mjs",
+    "start:portable": "npm run start",
     "package:release": "npm run build && node scripts/package-release.mjs",
     "typecheck": "tsc -b --noEmit"
   },

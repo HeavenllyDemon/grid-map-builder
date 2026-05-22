@@ -59,6 +59,9 @@ await fs.writeFile(
       license: packageJson.license,
       repository: packageJson.repository,
       engines: packageJson.engines,
+      scripts: {
+        start: 'node portable/server.mjs',
+      },
     },
     null,
     2,
@@ -87,6 +90,7 @@ await fs.writeFile(
     `Grid Map Builder ${tag}`,
     '',
     'Quick start:',
+    '- Terminal: npm run start',
     '- macOS: double-click start.command',
     '- Windows: double-click start.bat',
     '- Linux: run ./start.sh from a terminal',

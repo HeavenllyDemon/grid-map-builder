@@ -11,6 +11,7 @@ Projects live entirely in your browser IndexedDB. There is no account, backend, 
 3. Download `grid-map-builder-portable-vX.Y.Z.zip`.
 4. Unzip it anywhere you want to keep the app.
 5. Start it:
+   - Terminal: `npm run start`
    - macOS: double-click `start.command`
    - Windows: double-click `start.bat`
    - Linux: run `./start.sh`
@@ -46,7 +47,7 @@ To run the same fixed-origin local server used by the portable package:
 
 ```bash
 npm run build
-npm run start:portable
+npm run start
 ```
 
 To create release assets locally:
