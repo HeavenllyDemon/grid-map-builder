@@ -40,6 +40,7 @@ export function FloatingSpritePalette() {
     const result = await addSprites(files);
     const parts: string[] = [];
     if (result.added > 0) parts.push(`${result.added} added`);
+    if (result.reused > 0) parts.push(`${result.reused} updated`);
     if (result.queuedForCrop > 0)
       parts.push(`${result.queuedForCrop} queued for crop`);
     if (result.failed > 0) parts.push(`${result.failed} failed`);

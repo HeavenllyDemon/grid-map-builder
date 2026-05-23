@@ -1,10 +1,51 @@
-import type { Project, SpriteId } from '../types';
+import type { ExportCodeLength, Project, SpriteId } from '../types';
 
 const ALLOWED_SPRITE_CHARS =
   'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
-export const ALPHANUMERIC_CHAR = /^[A-Za-z0-9]$/;
-export const EMPTY_CHAR = /^[A-Za-z0-9._\-]$/;
+export const EXPORT_CODE_LENGTHS: ExportCodeLength[] = [1, 2, 3];
+export const DEFAULT_EXPORT_CODE_LENGTH: ExportCodeLength = 1;
+export const ALPHANUMERIC_CODE = /^[A-Za-z0-9]+$/;
+export const EMPTY_CODE = /^[A-Za-z0-9._\-]+$/;
+
+export function normalizeExportCodeLength(
+  value: unknown,
+): ExportCodeLength {
+  return value === 1 || value === 2 || value === 3
+    ? value
+    : DEFAULT_EXPORT_CODE_LENGTH;
+}
+
+export function maxCodesForLength(length: ExportCodeLength): number {
+  return ALLOWED_SPRITE_CHARS.length ** length;
+}
+
+export function validSpriteCode(
+  value: string,
+  length: ExportCodeLength,
+): boolean {
+  return value.length === length && ALPHANUMERIC_CODE.test(value);
+}
+
+export function exportCodeFromName(name: string): string | null {
+  const code = name.trim();
+  return /^[A-Za-z0-9]{1,3}$/.test(code) ? code : null;
+}
+
+export function validEmptyCode(
+  value: string,
+  length: ExportCodeLength,
+): boolean {
+  return value.length === length && EMPTY_CODE.test(value);
+}
+
+export function normalizeEmptyCode(
+  value: string | undefined,
+  length: ExportCodeLength,
+): string {
+  const seed = value && EMPTY_CODE.test(value[0]) ? value[0] : '.';
+  return seed.repeat(length);
+}
 
 export function findUsedSprites(project: Project): SpriteId[] {
   const seen = new Set<SpriteId>();
@@ -21,26 +62,51 @@ export function findUsedSprites(project: Project): SpriteId[] {
   );
 }
 
+function codeAt(index: number, length: ExportCodeLength): string {
+  const base = ALLOWED_SPRITE_CHARS.length;
+  const chars = new Array<string>(length);
+  let n = index;
+  for (let i = length - 1; i >= 0; i--) {
+    chars[i] = ALLOWED_SPRITE_CHARS[n % base];
+    n = Math.floor(n / base);
+  }
+  return chars.join('');
+}
+
 export function suggestChars(
   usedSpriteIds: SpriteId[],
   project: Project,
   emptyChar: string,
+  codeLength: ExportCodeLength,
 ): Map<SpriteId, string> {
   const map = new Map<SpriteId, string>();
   const taken = new Set<string>();
-  if (emptyChar.length === 1) taken.add(emptyChar);
+  if (validEmptyCode(emptyChar, codeLength)) taken.add(emptyChar);
 
   for (const id of usedSpriteIds) {
     const sprite = project.sprites.find((s) => s.id === id);
     const c = sprite?.exportChar;
-    if (c && ALPHANUMERIC_CHAR.test(c) && !taken.has(c)) {
+    if (c && validSpriteCode(c, codeLength) && !taken.has(c)) {
       map.set(id, c);
       taken.add(c);
     }
   }
   for (const id of usedSpriteIds) {
     if (map.has(id)) continue;
-    for (const c of ALLOWED_SPRITE_CHARS) {
+    const sprite = project.sprites.find((s) => s.id === id);
+    const c = sprite ? exportCodeFromName(sprite.name) : null;
+    if (c && validSpriteCode(c, codeLength) && !taken.has(c)) {
+      map.set(id, c);
+      taken.add(c);
+    }
+  }
+  const max = maxCodesForLength(codeLength);
+  let nextIndex = 0;
+  for (const id of usedSpriteIds) {
+    if (map.has(id)) continue;
+    while (nextIndex < max) {
+      const c = codeAt(nextIndex, codeLength);
+      nextIndex += 1;
       if (!taken.has(c)) {
         map.set(id, c);
         taken.add(c);

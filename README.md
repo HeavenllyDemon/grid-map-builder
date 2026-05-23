@@ -1,6 +1,6 @@
 # Grid Map Builder
 
-A local-first 2D tile map editor for building maps from your own sprites and exporting them as text files where each tile is a single alphanumeric character.
+A local-first 2D tile map editor for building maps from your own sprites and exporting them as text files where each tile is a fixed-width alphanumeric code.
 
 Projects live entirely in your browser IndexedDB. There is no account, backend, or cloud sync.
 
@@ -75,11 +75,12 @@ That writes:
 
 - Add sprites by uploading or dropping image files.
 - Matching tile-size images are added directly; other sizes open the crop tool.
+- Uploading the same tile image again renames the existing sprite instead of adding a duplicate, so placed tiles stay intact.
 - Select a sprite, then click or drag on tiles to paint.
 - Use right-click drag to paint a rectangle.
 - Use Eraser to clear tiles.
 - Pan with middle mouse or Space + drag. Wheel zooms on the cursor.
-- Export assigns one character per used sprite and downloads a `.txt` map.
+- Export assigns a 1-, 2-, or 3-character code per used sprite and downloads a `.txt` map.
 
 ### Keyboard Shortcuts
 
@@ -97,7 +98,7 @@ That writes:
 
 ### Export Format
 
-One character per tile, rows separated by `\n`. Sprite characters are alphanumeric; empty tiles use the empty-tile character, default `.`.
+One fixed-width code per tile, rows separated by `\n`. Sprite codes are alphanumeric and can be 1, 2, or 3 characters long; empty tiles use the empty-tile code, default `.`. A sprite whose name is already a 1-, 2-, or 3-character alphanumeric code uses that name as its default export code when the selected export length matches.
 
 ```text
 AABBB.

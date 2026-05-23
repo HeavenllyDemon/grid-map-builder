@@ -27,6 +27,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     sprites: [],
     tiles,
     emptyChar: '.',
+    exportCodeLength: 1,
     createdAt: now,
     updatedAt: now,
   };

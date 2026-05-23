@@ -10,12 +10,15 @@ import {
 } from '../storage/sprites';
 import { newId } from '../lib/ids';
 import {
-  bitmapToPngBlob,
+  bitmapToPngBlobAndHash,
+  hashImageBlob,
+  hashImageElement,
   loadImageFromBlob,
   revokeImage,
 } from '../lib/loadImage';
 import { stripExtension } from '../lib/files';
 import { renderThumbnailDataUrl } from '../lib/thumbnail';
+import { exportCodeFromName } from '../lib/exportMap';
 import {
   brushCells,
   clampBrushSize,
@@ -24,7 +27,13 @@ import {
   linePoints,
   type BrushShape,
 } from '../lib/brush';
-import type { Project, ProjectId, SpriteId, SpriteMeta } from '../types';
+import type {
+  ExportCodeLength,
+  Project,
+  ProjectId,
+  SpriteId,
+  SpriteMeta,
+} from '../types';
 import {
   type Camera,
   clampZoom,
@@ -44,6 +53,7 @@ export type Tool =
 
 export interface AddSpritesResult {
   added: number;
+  reused: number;
   queuedForCrop: number;
   failed: number;
 }
@@ -157,6 +167,7 @@ interface EditorState {
   closeExportModal: () => void;
   setSpriteExportChar: (spriteId: SpriteId, char: string) => void;
   setEmptyChar: (char: string) => void;
+  setExportCodeLength: (length: ExportCodeLength) => void;
 
   setActiveSprite: (id: SpriteId | null) => void;
   setActiveTool: (tool: Tool) => void;
@@ -216,6 +227,84 @@ function clearTimer() {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
+}
+
+function normalizedSpriteName(name: string): string {
+  return name.trim() || 'sprite';
+}
+
+function exportCharFromSpriteName(name: string): string | undefined {
+  return exportCodeFromName(name) ?? undefined;
+}
+
+function spriteWithUploadName(
+  sprite: SpriteMeta,
+  name: string,
+  imageHash: string,
+): SpriteMeta {
+  const exportChar = exportCharFromSpriteName(name);
+  return {
+    ...sprite,
+    name,
+    imageHash,
+    ...(exportChar ? { exportChar } : {}),
+  };
+}
+
+function newSpriteMeta(
+  id: SpriteId,
+  name: string,
+  width: number,
+  height: number,
+  imageHash: string,
+): SpriteMeta {
+  const exportChar = exportCharFromSpriteName(name);
+  return {
+    id,
+    name,
+    width,
+    height,
+    imageHash,
+    ...(exportChar ? { exportChar } : {}),
+    createdAt: Date.now(),
+  };
+}
+
+async function indexSpriteHashes(
+  sprites: SpriteMeta[],
+  images: Map<SpriteId, HTMLImageElement>,
+  width: number,
+  height: number,
+): Promise<{
+  sprites: SpriteMeta[];
+  idByHash: Map<string, SpriteId>;
+  changed: boolean;
+}> {
+  const indexedSprites = sprites.slice();
+  const idByHash = new Map<string, SpriteId>();
+  let changed = false;
+
+  for (let i = 0; i < indexedSprites.length; i++) {
+    const sprite = indexedSprites[i];
+    let imageHash = sprite.imageHash;
+    if (!imageHash) {
+      const img = images.get(sprite.id);
+      if (!img) continue;
+      try {
+        imageHash = await hashImageElement(img, width, height);
+      } catch (err) {
+        console.error('failed to hash sprite image', sprite.id, err);
+      }
+    }
+    if (!imageHash) continue;
+    if (sprite.imageHash !== imageHash) {
+      indexedSprites[i] = { ...sprite, imageHash };
+      changed = true;
+    }
+    if (!idByHash.has(imageHash)) idByHash.set(imageHash, sprite.id);
+  }
+
+  return { sprites: indexedSprites, idByHash, changed };
 }
 
 export const useEditorStore = create<EditorState>((set, get) => {
@@ -436,56 +525,96 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
     addSprites: async (files) => {
       const project = get().project;
-      if (!project) return { added: 0, queuedForCrop: 0, failed: 0 };
+      if (!project) return { added: 0, reused: 0, queuedForCrop: 0, failed: 0 };
       const { tileWidth, tileHeight } = project.settings;
 
       const needsCrop: File[] = [];
-      const newSprites: SpriteMeta[] = [];
       const newImages = new Map(get().spriteImages);
+      let sprites = project.sprites.slice();
+      let idByHash = new Map<string, SpriteId>();
+      let hashIndexReady = false;
+      let hashesChanged = false;
+      let added = 0;
+      let reused = 0;
       let failed = 0;
 
       const targetAspect = tileWidth / tileHeight;
       const ASPECT_TOLERANCE = 0.005;
 
+      async function ensureHashIndex() {
+        if (hashIndexReady) return;
+        const indexed = await indexSpriteHashes(
+          sprites,
+          newImages,
+          tileWidth,
+          tileHeight,
+        );
+        sprites = indexed.sprites;
+        idByHash = indexed.idByHash;
+        hashesChanged = indexed.changed;
+        hashIndexReady = true;
+      }
+
       for (const file of files) {
+        let bitmap: ImageBitmap | null = null;
         try {
-          const bitmap = await createImageBitmap(file);
+          bitmap = await createImageBitmap(file);
           const srcAspect = bitmap.width / bitmap.height;
           const sameSize =
             bitmap.width === tileWidth && bitmap.height === tileHeight;
           const sameAspect =
             Math.abs(srcAspect - targetAspect) < ASPECT_TOLERANCE;
           if (sameSize || sameAspect) {
+            await ensureHashIndex();
+            const name = normalizedSpriteName(stripExtension(file.name));
+            const { blob, imageHash } = await bitmapToPngBlobAndHash(
+              bitmap,
+              tileWidth,
+              tileHeight,
+            );
+            const existingId = idByHash.get(imageHash);
+            if (existingId) {
+              sprites = sprites.map((sprite) =>
+                sprite.id === existingId
+                  ? spriteWithUploadName(sprite, name, imageHash)
+                  : sprite,
+              );
+              reused += 1;
+              continue;
+            }
+
             const spriteId = newId();
-            const blob = await bitmapToPngBlob(bitmap, tileWidth, tileHeight);
             await addSpriteBlob(project.id, spriteId, blob);
             const img = await loadImageFromBlob(blob);
-            const meta: SpriteMeta = {
-              id: spriteId,
-              name: stripExtension(file.name),
-              width: tileWidth,
-              height: tileHeight,
-              createdAt: Date.now(),
-            };
-            newSprites.push(meta);
+            const meta = newSpriteMeta(
+              spriteId,
+              name,
+              tileWidth,
+              tileHeight,
+              imageHash,
+            );
+            sprites = [...sprites, meta];
+            idByHash.set(imageHash, spriteId);
             newImages.set(spriteId, img);
+            added += 1;
           } else {
             needsCrop.push(file);
           }
-          bitmap.close();
         } catch (err) {
           console.error('sprite upload failed', file.name, err);
           failed += 1;
+        } finally {
+          bitmap?.close();
         }
       }
 
-      if (newSprites.length > 0) {
+      if (added > 0 || reused > 0 || hashesChanged) {
         const current = get().project;
-        if (!current) return { added: 0, queuedForCrop: 0, failed };
+        if (!current) return { added: 0, reused: 0, queuedForCrop: 0, failed };
         set({
           project: {
             ...current,
-            sprites: [...current.sprites, ...newSprites],
+            sprites,
           },
           spriteImages: newImages,
         });
@@ -497,7 +626,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }
 
       return {
-        added: newSprites.length,
+        added,
+        reused,
         queuedForCrop: needsCrop.length,
         failed,
       };
@@ -557,22 +687,42 @@ export const useEditorStore = create<EditorState>((set, get) => {
       const project = get().project;
       if (!project) return;
       const { tileWidth, tileHeight } = project.settings;
+      const spriteName = normalizedSpriteName(name);
+      const imageHash = await hashImageBlob(blob, tileWidth, tileHeight);
+      const indexed = await indexSpriteHashes(
+        project.sprites,
+        get().spriteImages,
+        tileWidth,
+        tileHeight,
+      );
+      const existingId = indexed.idByHash.get(imageHash);
+      if (existingId) {
+        const sprites = indexed.sprites.map((sprite) =>
+          sprite.id === existingId
+            ? spriteWithUploadName(sprite, spriteName, imageHash)
+            : sprite,
+        );
+        set({ project: { ...project, sprites } });
+        scheduleSave();
+        return;
+      }
+
       const spriteId = newId();
       await addSpriteBlob(project.id, spriteId, blob);
       const img = await loadImageFromBlob(blob);
-      const meta: SpriteMeta = {
-        id: spriteId,
-        name: name.trim() || 'sprite',
-        width: tileWidth,
-        height: tileHeight,
-        createdAt: Date.now(),
-      };
+      const meta = newSpriteMeta(
+        spriteId,
+        spriteName,
+        tileWidth,
+        tileHeight,
+        imageHash,
+      );
       const current = get().project;
       if (!current) return;
       const newImages = new Map(get().spriteImages);
       newImages.set(spriteId, img);
       set({
-        project: { ...current, sprites: [...current.sprites, meta] },
+        project: { ...current, sprites: [...indexed.sprites, meta] },
         spriteImages: newImages,
       });
       scheduleSave();
@@ -886,6 +1036,14 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (!project) return;
       if (project.emptyChar === char) return;
       set({ project: { ...project, emptyChar: char } });
+      scheduleSave();
+    },
+
+    setExportCodeLength: (length) => {
+      const project = get().project;
+      if (!project) return;
+      if (project.exportCodeLength === length) return;
+      set({ project: { ...project, exportCodeLength: length } });
       scheduleSave();
     },
 

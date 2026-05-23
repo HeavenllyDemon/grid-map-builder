@@ -3,15 +3,19 @@ import { Download } from 'lucide-react';
 import { Modal } from '../common/Modal';
 import { useEditorStore } from '../../state/editorStore';
 import {
-  ALPHANUMERIC_CHAR,
-  EMPTY_CHAR,
+  EXPORT_CODE_LENGTHS,
   buildMapText,
   downloadText,
   findUsedSprites,
+  maxCodesForLength,
+  normalizeEmptyCode,
+  normalizeExportCodeLength,
   sanitizeFilename,
   suggestChars,
+  validEmptyCode,
+  validSpriteCode,
 } from '../../lib/exportMap';
-import type { SpriteId } from '../../types';
+import type { ExportCodeLength, SpriteId } from '../../types';
 
 export function ExportModal() {
   const project = useEditorStore((s) => s.project);
@@ -20,6 +24,9 @@ export function ExportModal() {
   const spriteImages = useEditorStore((s) => s.spriteImages);
   const setSpriteExportChar = useEditorStore((s) => s.setSpriteExportChar);
   const setEmptyCharStore = useEditorStore((s) => s.setEmptyChar);
+  const setExportCodeLengthStore = useEditorStore(
+    (s) => s.setExportCodeLength,
+  );
 
   const usedIds = useMemo(
     () => (project ? findUsedSprites(project) : []),
@@ -28,32 +35,58 @@ export function ExportModal() {
 
   const [chars, setChars] = useState<Record<SpriteId, string>>({});
   const [emptyChar, setEmptyChar] = useState('.');
+  const [codeLength, setCodeLength] = useState<ExportCodeLength>(1);
   const [filename, setFilename] = useState('');
 
   useEffect(() => {
     if (!open || !project) return;
-    const suggested = suggestChars(usedIds, project, project.emptyChar);
+    const nextCodeLength = normalizeExportCodeLength(project.exportCodeLength);
+    const nextEmptyChar = validEmptyCode(project.emptyChar, nextCodeLength)
+      ? project.emptyChar
+      : normalizeEmptyCode(project.emptyChar, nextCodeLength);
+    const suggested = suggestChars(
+      usedIds,
+      project,
+      nextEmptyChar,
+      nextCodeLength,
+    );
     const obj: Record<SpriteId, string> = {};
     for (const [id, c] of suggested) obj[id] = c;
     setChars(obj);
-    setEmptyChar(project.emptyChar);
+    setEmptyChar(nextEmptyChar);
+    setCodeLength(nextCodeLength);
     setFilename(`${sanitizeFilename(project.name)}.txt`);
   }, [open, project, usedIds]);
 
   if (!project) return null;
+  const activeProject = project;
 
   const errors: Record<string, string> = {};
+  const maxSpriteCodes = maxCodesForLength(codeLength);
+  const emptyConsumesSpriteCode = validSpriteCode(emptyChar, codeLength);
+  const availableSpriteCodes =
+    maxSpriteCodes - (emptyConsumesSpriteCode ? 1 : 0);
 
-  if (!EMPTY_CHAR.test(emptyChar)) {
-    errors.emptyChar = 'Must be a single character from A-Z, a-z, 0-9, . _ -';
+  if (!validEmptyCode(emptyChar, codeLength)) {
+    errors.emptyChar = `Must be exactly ${codeLength} character${
+      codeLength === 1 ? '' : 's'
+    } from A-Z, a-z, 0-9, . _ -`;
+  }
+
+  if (usedIds.length > availableSpriteCodes) {
+    errors.capacity = `${codeLength}-character codes can cover ${availableSpriteCodes.toLocaleString()} sprite${
+      availableSpriteCodes === 1 ? '' : 's'
+    } with this empty-tile code.`;
   }
 
   const charCounts: Record<string, number> = {};
-  charCounts[emptyChar] = 1;
+  if (validEmptyCode(emptyChar, codeLength)) charCounts[emptyChar] = 1;
   for (const id of usedIds) {
     const c = chars[id] ?? '';
-    if (!ALPHANUMERIC_CHAR.test(c)) {
-      errors[`sprite:${id}`] = 'Single A-Z, a-z, or 0-9';
+    if (!validSpriteCode(c, codeLength)) {
+      errors[`sprite:${id}`] = `${codeLength} alphanumeric character${
+        codeLength === 1 ? '' : 's'
+      }`;
     } else {
       charCounts[c] = (charCounts[c] ?? 0) + 1;
     }
@@ -61,11 +94,11 @@ export function ExportModal() {
   for (const id of usedIds) {
     const c = chars[id];
     if (c && charCounts[c] > 1) {
-      errors[`sprite:${id}`] = 'Duplicate character';
+      errors[`sprite:${id}`] = 'Duplicate code';
     }
   }
-  if (charCounts[emptyChar] > 1) {
-    errors.emptyChar = 'Conflicts with a sprite character';
+  if (validEmptyCode(emptyChar, codeLength) && charCounts[emptyChar] > 1) {
+    errors.emptyChar = 'Conflicts with a sprite code';
   }
 
   if (!filename.trim()) {
@@ -74,29 +107,57 @@ export function ExportModal() {
 
   const valid = Object.keys(errors).length === 0;
 
+  function makeSuggestions(
+    nextCodeLength: ExportCodeLength,
+    nextEmptyChar: string,
+  ) {
+    const suggested = suggestChars(
+      usedIds,
+      activeProject,
+      nextEmptyChar,
+      nextCodeLength,
+    );
+    const obj: Record<SpriteId, string> = {};
+    for (const [id, c] of suggested) obj[id] = c;
+    setChars(obj);
+  }
+
+  function setCodeLengthFor(nextCodeLength: ExportCodeLength) {
+    if (nextCodeLength === codeLength) return;
+    const nextEmptyChar = normalizeEmptyCode(emptyChar, nextCodeLength);
+    setCodeLength(nextCodeLength);
+    setEmptyChar(nextEmptyChar);
+    makeSuggestions(nextCodeLength, nextEmptyChar);
+  }
+
   function setCharFor(id: SpriteId, value: string) {
-    const v = value.slice(0, 1);
+    const v = value.slice(0, codeLength);
     setChars((prev) => ({ ...prev, [id]: v }));
   }
 
   function doExport() {
-    if (!valid || !project) return;
+    if (!valid) return;
     for (const id of usedIds) {
       const c = chars[id];
       if (c) setSpriteExportChar(id, c);
     }
-    if (project.emptyChar !== emptyChar) setEmptyCharStore(emptyChar);
+    if (activeProject.emptyChar !== emptyChar) setEmptyCharStore(emptyChar);
+    if (activeProject.exportCodeLength !== codeLength) {
+      setExportCodeLengthStore(codeLength);
+    }
     const map = new Map<SpriteId, string>();
     for (const id of usedIds) {
       const c = chars[id];
       if (c) map.set(id, c);
     }
-    const text = buildMapText(project, map, emptyChar);
+    const text = buildMapText(activeProject, map, emptyChar);
     const safe = filename.endsWith('.txt') ? filename : `${filename}.txt`;
     downloadText(safe, text);
   }
 
   const noUsage = usedIds.length === 0;
+  const codeInputWidthClass =
+    codeLength === 1 ? 'w-12' : codeLength === 2 ? 'w-16' : 'w-20';
 
   return (
     <Modal
@@ -106,15 +167,50 @@ export function ExportModal() {
       widthClass="w-full max-w-xl"
     >
       <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs uppercase tracking-wide text-zinc-400">
+            Tile code length
+          </div>
+          <div className="inline-flex overflow-hidden rounded-md border border-zinc-800 bg-zinc-950 p-0.5">
+            {EXPORT_CODE_LENGTHS.map((length) => {
+              const active = codeLength === length;
+              return (
+                <button
+                  key={length}
+                  type="button"
+                  onClick={() => setCodeLengthFor(length)}
+                  aria-pressed={active}
+                  aria-label={`${length} character${
+                    length === 1 ? '' : 's'
+                  } per tile`}
+                  className={`h-8 w-10 rounded px-2 text-sm font-medium ${
+                    active
+                      ? 'bg-orange-500 text-zinc-950'
+                      : 'text-zinc-300 hover:bg-zinc-800'
+                  }`}
+                >
+                  {length}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {errors.capacity && (
+          <p className="rounded-md border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+            {errors.capacity}
+          </p>
+        )}
+
         {noUsage ? (
           <p className="rounded-md border border-amber-800/40 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
             No sprites placed on this map. The export will be filled entirely
-            with the empty-tile character.
+            with the empty-tile code.
           </p>
         ) : (
           <div>
             <div className="mb-2 text-xs uppercase tracking-wide text-zinc-400">
-              Characters ({usedIds.length} sprite
+              Tile codes ({usedIds.length} sprite
               {usedIds.length === 1 ? '' : 's'} used)
             </div>
             <div className="flex max-h-72 flex-col gap-1.5 overflow-auto rounded-md border border-zinc-800 bg-zinc-950 p-2">
@@ -149,8 +245,8 @@ export function ExportModal() {
                       type="text"
                       value={chars[id] ?? ''}
                       onChange={(e) => setCharFor(id, e.target.value)}
-                      maxLength={1}
-                      className={`h-9 w-12 rounded-md border bg-zinc-950 text-center font-mono text-base focus:outline-none ${
+                      maxLength={codeLength}
+                      className={`h-9 ${codeInputWidthClass} rounded-md border bg-zinc-950 text-center font-mono text-base focus:outline-none ${
                         err
                           ? 'border-red-500 focus:border-red-400'
                           : 'border-zinc-700 focus:border-orange-500'
@@ -166,13 +262,15 @@ export function ExportModal() {
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1">
             <span className="text-xs uppercase tracking-wide text-zinc-400">
-              Empty tile char
+              Empty tile code
             </span>
             <input
               type="text"
               value={emptyChar}
-              onChange={(e) => setEmptyChar(e.target.value.slice(0, 1))}
-              maxLength={1}
+              onChange={(e) =>
+                setEmptyChar(e.target.value.slice(0, codeLength))
+              }
+              maxLength={codeLength}
               className={`rounded-md border bg-zinc-950 px-3 py-1.5 text-center font-mono focus:outline-none ${
                 errors.emptyChar
                   ? 'border-red-500 focus:border-red-400'

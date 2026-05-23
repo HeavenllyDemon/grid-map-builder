@@ -1,5 +1,6 @@
 export type ProjectId = string;
 export type SpriteId = string;
+export type ExportCodeLength = 1 | 2 | 3;
 
 export interface ProjectSettings {
   gridCols: number;
@@ -14,6 +15,7 @@ export interface SpriteMeta {
   width: number;
   height: number;
   exportChar?: string;
+  imageHash?: string;
   createdAt: number;
 }
 
@@ -26,6 +28,7 @@ export interface Project {
   sprites: SpriteMeta[];
   tiles: TileGrid;
   emptyChar: string;
+  exportCodeLength?: ExportCodeLength;
   createdAt: number;
   updatedAt: number;
   thumbnailDataUrl?: string;
